@@ -325,5 +325,162 @@ describe('custom filters', function() {
       assert.strictEqual(err.line, 2);
       assert.strictEqual(err.filename, __dirname + '/context-test.pug');
     });
+
+    it('unknown filter reports UNKNOWN_FILTER with location', function() {
+      var err;
+      try {
+        pug.compile(
+          'html\n' +
+          '  body\n' +
+          '    :nonexistent\n' +
+          '      content',
+          {filename: 'unknown-filter-test.pug'}
+        )();
+      } catch (ex) {
+        err = ex;
+      }
+
+      assert(err);
+      assert.strictEqual(err.code, 'PUG:UNKNOWN_FILTER');
+      assert(err.msg.indexOf('nonexistent') !== -1);
+      assert.strictEqual(err.line, 3);
+      assert.strictEqual(err.filename, 'unknown-filter-test.pug');
+      assert.strictEqual(typeof err.column, 'number');
+    });
+
+    it('unknown filter error message includes source context', function() {
+      var src =
+        'html\n' +
+        '  body\n' +
+        '    :mysteryfilter\n' +
+        '      hello';
+
+      var err;
+      try {
+        pug.compile(src, {filename: __dirname + '/src-context.pug'})();
+      } catch (ex) {
+        err = ex;
+      }
+
+      assert(err);
+      var msg = err.message;
+      assert(msg.indexOf(':mysteryfilter') !== -1);
+      assert(msg.indexOf('hello') === -1 || msg.indexOf('3|') !== -1);
+      assert(msg.indexOf(__dirname + '/src-context.pug') !== -1);
+    });
+
+    it('dynamic filter option reports FILTER_OPTION_NOT_CONSTANT', function() {
+      pug.filters.register('dynopt', function(str, options) {
+        return str + (options.value || '');
+      });
+
+      var err;
+      try {
+        pug.compile(
+          '- var x = 1;\n' +
+          ':dynopt(value=x)\n' +
+          '  content'
+        )();
+      } catch (ex) {
+        err = ex;
+      }
+
+      assert(err);
+      assert.strictEqual(err.code, 'PUG:FILTER_OPTION_NOT_CONSTANT');
+      assert(err.msg.indexOf('constant') !== -1);
+      assert.strictEqual(err.line, 2);
+    });
+
+    it('dynamic filter option includes column info', function() {
+      pug.filters.register('coltest', function() { return ''; });
+
+      var err;
+      try {
+        pug.compile(
+          '- var n = 5;\n' +
+          ':colopt(val=n)\n' +
+          '  x'
+        )();
+      } catch (ex) {
+        err = ex;
+      }
+
+      assert(err);
+      assert.strictEqual(typeof err.column, 'number');
+      assert(err.column >= 0);
+    });
+
+    it('filter error includes column position', function() {
+      pug.filters.register('colerr', function() {
+        throw new Error('col boom');
+      });
+
+      var err;
+      try {
+        pug.compile(
+          'html\n' +
+          '  body\n' +
+          '    :colerr\n' +
+          '      data'
+        )();
+      } catch (ex) {
+        err = ex;
+      }
+
+      assert(err);
+      assert.strictEqual(err.code, 'PUG:FILTER_ERROR');
+      assert.strictEqual(typeof err.column, 'number');
+      assert(err.column >= 0);
+    });
+
+    it('filter alias chain reports FILTER_ALISE_CHAIN', function() {
+      pug.filters.register('real', function(str) { return str; });
+
+      var err;
+      try {
+        pug.compile(
+          ':alias1\n' +
+          '  test',
+          {
+            filterAliases: {
+              alias1: 'alias2',
+              alias2: 'real',
+            },
+          }
+        )();
+      } catch (ex) {
+        err = ex;
+      }
+
+      assert(err);
+      assert.strictEqual(err.code, 'PUG:FILTER_ALISE_CHAIN');
+      assert(err.msg.indexOf('alias1') !== -1);
+      assert(err.msg.indexOf('alias2') !== -1);
+      assert.strictEqual(err.line, 1);
+    });
+
+    it('register with undefined name throws TypeError', function() {
+      assert.throws(function() {
+        pug.filters.register(undefined, function() {});
+      }, TypeError);
+    });
+
+    it('register with empty name throws TypeError', function() {
+      assert.throws(function() {
+        pug.filters.register('', function() {});
+      }, TypeError);
+    });
+
+    it('register with undefined function throws TypeError', function() {
+      assert.throws(function() {
+        pug.filters.register('test', undefined);
+      }, TypeError);
+    });
+
+    it('register with object instead of function throws TypeError', function() {
+      assert.throws(function() {
+        pug.filters.register('test', {});
+      }, TypeError);
+    });
   });
 });

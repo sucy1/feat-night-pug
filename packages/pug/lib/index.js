@@ -261,7 +261,8 @@ function compileBody(str, options) {
     ast,
     filtersSet,
     options.filterOptions,
-    options.filterAliases
+    options.filterAliases,
+    debug_sources
   );
 
   ast = applyPlugins(ast, options, plugins, 'postFilters');
