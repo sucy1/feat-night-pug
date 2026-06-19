@@ -21,6 +21,7 @@ var link = require('pug-linker');
 var generateCode = require('pug-code-gen');
 var runtime = require('pug-runtime');
 var runtimeWrap = require('pug-runtime/wrap');
+var globalFilters = require('./filters');
 
 /**
  * Name for detection
@@ -60,10 +61,87 @@ function findReplacementFunc(plugins, name) {
 }
 
 /**
- * Object for global custom filters.  Note that you can also just pass a `filters`
- * option to any other method.
+ * Global custom filters with backward-compatible object access and
+ * new register/unregister/get/all/clear methods.
  */
-exports.filters = {};
+exports.filters = Object.create(
+  {
+    register: globalFilters.register,
+    unregister: globalFilters.unregister,
+    get: globalFilters.get,
+    all: globalFilters.all,
+    clear: globalFilters.clear,
+  },
+  {
+    set: {
+      enumerable: false,
+      value: function(name, fn) {
+        globalFilters.register(name, fn);
+      },
+    },
+  }
+);
+Object.defineProperty(exports.filters, Symbol.toStringTag, {
+  value: 'PugFilters',
+});
+
+function createFiltersProxy(filtersModule) {
+  var proxy = Object.create(filtersModule);
+  return new Proxy(proxy, {
+    get: function(target, prop) {
+      if (typeof prop === 'symbol') return undefined;
+      if (prop in target) return target[prop];
+      return filtersModule.get(prop);
+    },
+    set: function(target, prop, value) {
+      if (typeof prop === 'symbol') return false;
+      if (typeof value === 'function') {
+        filtersModule.register(prop, value);
+        return true;
+      }
+      return false;
+    },
+    has: function(target, prop) {
+      if (typeof prop === 'symbol') return false;
+      if (prop in target) return true;
+      return filtersModule.get(prop) !== null;
+    },
+    ownKeys: function() {
+      var builtinKeys = ['register', 'unregister', 'get', 'all', 'clear', 'set'];
+      var userKeys = Object.keys(filtersModule.all());
+      return builtinKeys.concat(userKeys);
+    },
+    getOwnPropertyDescriptor: function(target, prop) {
+      if (prop in Object.getPrototypeOf(target)) {
+        return Object.getOwnPropertyDescriptor(
+          Object.getPrototypeOf(target),
+          prop
+        );
+      }
+      var val = filtersModule.get(prop);
+      if (val !== null) {
+        return {
+          value: val,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        };
+      }
+      return undefined;
+    },
+  });
+}
+
+try {
+  exports.filters = createFiltersProxy({
+    register: globalFilters.register,
+    unregister: globalFilters.unregister,
+    get: globalFilters.get,
+    all: globalFilters.all,
+    clear: globalFilters.clear,
+  });
+} catch (_) {
+}
 
 /**
  * Compile the given `str` of pug and return a function body.
@@ -173,10 +251,7 @@ function compileBody(str, options) {
   ast = applyPlugins(ast, options, plugins, 'postLoad');
   ast = applyPlugins(ast, options, plugins, 'preFilters');
 
-  var filtersSet = {};
-  Object.keys(exports.filters).forEach(function(key) {
-    filtersSet[key] = exports.filters[key];
-  });
+  var filtersSet = globalFilters.all();
   if (options.filters) {
     Object.keys(options.filters).forEach(function(key) {
       filtersSet[key] = options.filters[key];

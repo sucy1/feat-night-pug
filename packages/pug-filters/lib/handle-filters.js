@@ -44,28 +44,52 @@ function handleFilters(ast, filters, options, filterAliases) {
       }
 
       function filterWithFallback(filter, text, attrs, funcName) {
-        try {
-          var filterName = getFilterName(filter);
-          if (filters && filters[filterName]) {
+        var filterName = getFilterName(filter);
+        if (filters && filters[filterName]) {
+          try {
             return filters[filterName](text, attrs);
-          } else {
+          } catch (ex) {
+            if (ex.code && ex.code.indexOf('PUG:') === 0) {
+              throw ex;
+            }
+            var msg = ex instanceof Error ? ex.message : String(ex);
+            throw error(
+              'FILTER_ERROR',
+              'Filter "' + filterName + '" threw an error: ' + msg,
+              filter
+            );
+          }
+        } else {
+          try {
             return runFilter(filterName, text, attrs, dir, funcName);
+          } catch (ex) {
+            if (ex.code === 'UNKNOWN_FILTER') {
+              throw error(ex.code, ex.message, filter);
+            }
+            throw ex;
           }
-        } catch (ex) {
-          if (ex.code === 'UNKNOWN_FILTER') {
-            throw error(ex.code, ex.message, filter);
-          }
-          throw ex;
         }
       }
 
       function filterFileWithFallback(filter, filename, file, attrs) {
         var filterName = getFilterName(filter);
         if (filters && filters[filterName]) {
-          if (filters[filterName].renderBuffer) {
-            return filters[filterName].renderBuffer(file.raw, attrs);
-          } else {
-            return filters[filterName](file.str, attrs);
+          try {
+            if (filters[filterName].renderBuffer) {
+              return filters[filterName].renderBuffer(file.raw, attrs);
+            } else {
+              return filters[filterName](file.str, attrs);
+            }
+          } catch (ex) {
+            if (ex.code && ex.code.indexOf('PUG:') === 0) {
+              throw ex;
+            }
+            var msg = ex instanceof Error ? ex.message : String(ex);
+            throw error(
+              'FILTER_ERROR',
+              'Filter "' + filterName + '" threw an error: ' + msg,
+              filter
+            );
           }
         } else {
           return filterWithFallback(filter, filename, attrs, 'renderFile');
